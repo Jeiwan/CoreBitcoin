@@ -107,6 +107,15 @@ NSString* BTCTransactionIDFromHash(NSData* txhash) DEPRECATED_ATTRIBUTE;
 // Default is nil.
 @property(nonatomic) NSDictionary* userInfo;
 
+// Transaction weight is defined as Base transaction size * 3 + Total transaction size.
+@property(nonatomic) NSUInteger weight;
+
+// Base transaction size is the size of the transaction serialised with the witness data stripped. 
+@property(nonatomic) NSUInteger baseSize;
+
+// Virtual transaction size is defined as Transaction weight / 4 (rounded up to the next integer). 
+@property(nonatomic) NSUInteger virtualSize;
+
 // Returns a dictionary representation suitable for encoding in JSON or Plist.
 @property(nonatomic, readonly) NSDictionary* dictionary;
 

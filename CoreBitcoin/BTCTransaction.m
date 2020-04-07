@@ -170,27 +170,29 @@ NSString* BTCTransactionIDFromHash(NSData* txhash) {
 }
 
 - (NSData*) data {
-    return [self computePayload];
+    return [self computePayload:true];
 }
 
 - (NSString*) hex {
     return BTCHexFromData(self.data);
 }
 
-- (NSData*) computePayload {
+- (NSData*) computePayload:(Boolean)includeWitness {
     NSMutableData* payload = [NSMutableData data];
     
     // 4-byte version
     uint32_t ver = _version;
     [payload appendBytes:&ver length:4];
 
-    // 1-byte marker
-    uint8_t marker = 0x00;
-    [payload appendBytes:&marker length:1];
-
-    // 1-byte flag (0x01 - always segwit)
-    uint8_t flag = 0x01;
-    [payload appendBytes:&flag length:1];
+    if (includeWitness){
+        // 1-byte marker
+        uint8_t marker = 0x00;
+        [payload appendBytes:&marker length:1];
+        
+        // 1-byte flag (0x01 - always segwit)
+        uint8_t flag = 0x01;
+        [payload appendBytes:&flag length:1];
+    }
     
     // varint with number of inputs
     [payload appendData:[BTCProtocolSerialization dataForVarInt:_inputs.count]];
@@ -208,11 +210,13 @@ NSString* BTCTransactionIDFromHash(NSData* txhash) {
         [payload appendData:output.data];
     }
     
-    for (BTCTransactionInput* input in _inputs) {
-        [payload appendData:[BTCProtocolSerialization dataForVarInt:input.witness.count]];
-
-        for(NSData* witnessPiece in input.witness) {
-            [payload appendData:[BTCProtocolSerialization dataForVarString:witnessPiece]];
+    if (includeWitness){
+        for (BTCTransactionInput* input in _inputs) {
+            [payload appendData:[BTCProtocolSerialization dataForVarInt:input.witness.count]];
+            
+            for(NSData* witnessPiece in input.witness) {
+                [payload appendData:[BTCProtocolSerialization dataForVarString:witnessPiece]];
+            }
         }
     }
 
@@ -221,6 +225,18 @@ NSString* BTCTransactionIDFromHash(NSData* txhash) {
     [payload appendBytes:&lt length:4];
     
     return payload;
+}
+
+- (NSUInteger) weight {
+    return self.baseSize * 3 + self.data.length;
+}
+
+- (NSUInteger) baseSize {
+    return [self computePayload:false].length;
+}
+
+- (NSUInteger) virtualSize {
+    return (int)ceil((double)self.weight / 4.0);
 }
 
 
@@ -579,7 +595,7 @@ NSString* BTCTransactionIDFromHash(NSData* txhash) {
 }
 
 // Computes estimated fee for the given tx size using specified fee rate (satoshis per 1000 bytes).
-+ (BTCAmount) xestimateFeeForSize:(NSInteger)txsize feeRate:(BTCAmount)feePerK {
++ (BTCAmount) estimateFeeForSize:(NSInteger)txsize feeRate:(BTCAmount)feePerK {
     if (feePerK <= 0) return 0;
     BTCAmount fee = 0;
     while (txsize > 0) { // add fee rate for each (even incomplete) 1K byte chunk
