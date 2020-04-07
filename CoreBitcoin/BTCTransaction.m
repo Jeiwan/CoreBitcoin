@@ -183,6 +183,14 @@ NSString* BTCTransactionIDFromHash(NSData* txhash) {
     // 4-byte version
     uint32_t ver = _version;
     [payload appendBytes:&ver length:4];
+
+    // 1-byte marker
+    uint8_t marker = 0x00;
+    [payload appendBytes:&marker length:1];
+
+    // 1-byte flag (0x01 - always segwit)
+    uint8_t flag = 0x01;
+    [payload appendBytes:&flag length:1];
     
     // varint with number of inputs
     [payload appendData:[BTCProtocolSerialization dataForVarInt:_inputs.count]];
@@ -200,6 +208,14 @@ NSString* BTCTransactionIDFromHash(NSData* txhash) {
         [payload appendData:output.data];
     }
     
+    for (BTCTransactionInput* input in _inputs) {
+        [payload appendData:[BTCProtocolSerialization dataForVarInt:input.witness.count]];
+
+        for(NSData* witnessPiece in input.witness) {
+            [payload appendData:[BTCProtocolSerialization dataForVarString:witnessPiece]];
+        }
+    }
+
     // 4-byte lock_time
     uint32_t lt = _lockTime;
     [payload appendBytes:&lt length:4];
@@ -297,6 +313,12 @@ NSString* BTCTransactionIDFromHash(NSData* txhash) {
     
     if ([stream read:(uint8_t*)&_version maxLength:sizeof(_version)] != sizeof(_version)) return NO;
     
+    uint8_t marker;
+    if ([stream read:(uint8_t*)&marker maxLength:sizeof(marker)] != sizeof(marker)) return NO;
+    
+    uint8_t flag;
+    if ([stream read:(uint8_t*)&flag maxLength:sizeof(flag)] != sizeof(flag)) return NO;
+    
     {
         uint64_t inputsCount = 0;
         if ([BTCProtocolSerialization readVarInt:&inputsCount fromStream:stream] == 0) return NO;
@@ -325,6 +347,32 @@ NSString* BTCTransactionIDFromHash(NSData* txhash) {
             [outs addObject:output];
         }
         _outputs = outs;
+    }
+    
+    
+    {
+        NSMutableArray* witnessedInputs = [NSMutableArray array];
+        
+        for (uint64_t i = 0; i < _inputs.count; i++)
+        {
+            uint64_t witnessPartsCount = 0;
+            if ([BTCProtocolSerialization readVarInt:&witnessPartsCount fromStream:stream] == 0) return NO;
+
+            NSMutableArray* witnessData = [NSMutableArray array];
+            for (uint64_t j = 0; j < witnessPartsCount; j++)
+            {
+                NSData* witnessPiece = [BTCProtocolSerialization readVarStringFromStream:stream];
+                if (!witnessPiece) return NO;
+
+                [witnessData addObject:witnessPiece];
+            }
+            
+            BTCTransactionInput* input = [_inputs objectAtIndex:i];
+            [input setWitness:witnessData];
+            [witnessedInputs addObject:input];
+        }
+        
+        _inputs = witnessedInputs;
     }
     
     if ([stream read:(uint8_t*)&_lockTime maxLength:sizeof(_lockTime)] != sizeof(_lockTime)) return NO;
@@ -531,7 +579,7 @@ NSString* BTCTransactionIDFromHash(NSData* txhash) {
 }
 
 // Computes estimated fee for the given tx size using specified fee rate (satoshis per 1000 bytes).
-+ (BTCAmount) estimateFeeForSize:(NSInteger)txsize feeRate:(BTCAmount)feePerK {
++ (BTCAmount) xestimateFeeForSize:(NSInteger)txsize feeRate:(BTCAmount)feePerK {
     if (feePerK <= 0) return 0;
     BTCAmount fee = 0;
     while (txsize > 0) { // add fee rate for each (even incomplete) 1K byte chunk

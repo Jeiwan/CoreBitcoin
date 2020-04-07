@@ -124,6 +124,7 @@ NSString* const BTCTransactionBuilderErrorDomain = @"com.oleganza.CoreBitcoin.Tr
         }
 
         BTCAmount fee = [self computeFeeForTransaction:result.transaction];
+        NSLog(@"COMPUTED FEE %lld", fee);
 
         BTCAmount change = result.inputsAmount - result.outputsAmount - fee;
 
@@ -294,41 +295,23 @@ NSString* const BTCTransactionBuilderErrorDomain = @"com.oleganza.CoreBitcoin.Tr
     }
 
     if (key) {
-        NSData* cpk = key.compressedPublicKey;
-        NSData* ucpk = key.uncompressedPublicKey;
-
         BTCSignatureHashType hashtype = SIGHASH_ALL;
+
+        NSData* pubkey = key.uncompressedPublicKeyAddress.data;
 
         NSData* sighash = [tx signatureHashForScript:[outputScript copy] inputIndex:i hashType:hashtype error:errorOut];
         if (!sighash) {
             return NO;
         }
 
-        // Most common case: P2PKH with compressed pubkey (because of BIP32)
-        BTCScript* p2cpkhScript = [[BTCScript alloc] initWithAddress:[BTCPublicKeyAddress addressWithData:BTCHash160(cpk)]];
-        if ([outputScript.data isEqual:p2cpkhScript.data]) {
-            txin.signatureScript = [[[BTCScript new] appendData:[key signatureForHash:sighash hashType:hashtype]] appendData:cpk];
-            return YES;
-        }
-
-        // Less common case: P2PKH with uncompressed pubkey (when not using BIP32)
-        BTCScript* p2ucpkhScript = [[BTCScript alloc] initWithAddress:[BTCPublicKeyAddress addressWithData:BTCHash160(ucpk)]];
-        if ([outputScript.data isEqual:p2ucpkhScript.data]) {
-            txin.signatureScript = [[[BTCScript new] appendData:[key signatureForHash:sighash hashType:hashtype]] appendData:ucpk];
-            return YES;
-        }
-
-        BTCScript* p2cpkScript = [[[BTCScript new] appendData:cpk] appendOpcode:OP_CHECKSIG];
-        BTCScript* p2ucpkScript = [[[BTCScript new] appendData:ucpk] appendOpcode:OP_CHECKSIG];
-
-        if ([outputScript.data isEqual:p2cpkScript] ||
-            [outputScript.data isEqual:p2ucpkScript]) {
-            txin.signatureScript = [[BTCScript new] appendData:[key signatureForHash:sighash hashType:hashtype]];
-            return YES;
-        } else {
-            // Not supported script type.
-            // Try custom signature.
-        }
+        // The only case: P2WPKH
+        txin.witness = [NSMutableArray array];
+        [txin.witness addObject:[key signatureForHash:sighash hashType:hashtype]];
+        [txin.witness addObject:pubkey];
+        
+        txin.signatureScript = nil;
+        
+        return YES;
     } // if key
 
     // Ask to sign the transaction input to sign this if that's some kind of special input or script.
