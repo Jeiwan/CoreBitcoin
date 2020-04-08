@@ -304,7 +304,7 @@ NSString* const BTCTransactionBuilderErrorDomain = @"com.oleganza.CoreBitcoin.Tr
         // The only case: P2WPKH
         txin.witness = [NSMutableArray array];
         [txin.witness addObject:[key signatureForHash:sighash hashType:hashtype]];
-        [txin.witness addObject:key.compressedPublicKeyAddress.data];
+        [txin.witness addObject:key.compressedPublicKey];
         
         txin.signatureScript = nil;
         
