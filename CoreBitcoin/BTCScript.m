@@ -187,6 +187,19 @@
     return BTCHexFromData(self.data);
 }
 
+- (NSData*) scriptCode {
+    unsigned char scriptCodePrefix[4] = {0x19, 0x76, 0xa9, 0x14};
+    unsigned char scriptCodePostfix[2] = {0x88, 0xac};
+    
+    NSMutableData* scriptCode = [NSMutableData data];
+    [scriptCode appendBytes:&scriptCodePrefix length:4];
+    [scriptCode appendData:[_data subdataWithRange:NSMakeRange(2, _data.length-2)]];
+    [scriptCode appendBytes:&scriptCodePostfix length:2];
+    
+    return [[NSData alloc] initWithData:scriptCode];
+}
+
+
 - (NSString*) string {
     if (!_string) {
         NSMutableArray* buffer = [NSMutableArray array];

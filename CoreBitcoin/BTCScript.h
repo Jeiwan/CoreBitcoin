@@ -66,6 +66,10 @@ typedef NS_ENUM(NSInteger, BTCScriptSimulationOptions) {
 // Hex representation
 @property(nonatomic, readonly) NSString* hex;
 
+// Witness script code.
+@property(nonatomic, readonly) NSData* scriptCode;
+
+
 // Space-separated hex-encoded commands and data.
 // Small integers (data fitting in 4 bytes) incuding OP_<N> are represented with decimal digits.
 // Other opcodes are represented with their names.

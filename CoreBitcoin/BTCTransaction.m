@@ -428,76 +428,61 @@ NSString* BTCTransactionIDFromHash(NSData* txhash) {
         return nil;
     }
     
-    // In case concatenating two scripts ends up with two codeseparators,
-    // or an extra one at the end, this prevents all those possible incompatibilities.
-    // Note: this normally never happens because there is no use for OP_CODESEPARATOR.
-    // But we have to do that cleanup anyway to not break on rare transaction that use that for lulz.
-    // Also: we modify the same subscript which is used several times for multisig check, but that's what BitcoinQT does as well.
-    [subscript deleteOccurrencesOfOpcode:OP_CODESEPARATOR];
-    
-    // Blank out other inputs' signature scripts
-    // and replace our input script with a subscript (which is typically a full output script from the previous transaction).
-    for (BTCTransactionInput* txin in tx.inputs) {
-        txin.signatureScript = [[BTCScript alloc] init];
-    }
-    ((BTCTransactionInput*)tx.inputs[inputIndex]).signatureScript = subscript;
-    
-    // Blank out some of the outputs depending on BTCSignatureHashType
-    // Default is SIGHASH_ALL - all inputs and outputs are signed.
-    if ((hashType & SIGHASH_OUTPUT_MASK) == SIGHASH_NONE) {
-        // Wildcard payee - we can pay anywhere.
-        [tx removeAllOutputs];
+    // Previous outputs and sequences
+    NSMutableData* prevouts = [NSMutableData data];
+    NSMutableData* sequence = [NSMutableData data];
+    for(BTCTransactionInput* input in _inputs) {
+        [prevouts appendData:[input previousHash]];
         
-        // Blank out others' input sequence numbers to let others update transaction at will.
-        for (NSUInteger i = 0; i < tx.inputs.count; i++) {
-            if (i != inputIndex) {
-                ((BTCTransactionInput*)tx.inputs[i]).sequence = 0;
-            }
-        }
-    } else if ((hashType & SIGHASH_OUTPUT_MASK) == SIGHASH_SINGLE) {
-        // Single mode assumes we sign an output at the same index as an input.
-        // Outputs before the one we need are blanked out. All outputs after are simply removed.
-        // Only lock-in the txout payee at same index as txin.
-        uint32_t outputIndex = inputIndex;
-        
-        // If outputIndex is out of bounds, BitcoinQT is returning a 256-bit little-endian 0x01 instead of failing with error.
-        // We should do the same to stay compatible.
-        if (outputIndex >= tx.outputs.count) {
-            static unsigned char littleEndianOne[32] = {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-            return [NSData dataWithBytes:littleEndianOne length:32];
-        }
-        
-        // All outputs before the one we need are blanked out. All outputs after are simply removed.
-        // This is equivalent to replacing outputs with (i-1) empty outputs and a i-th original one.
-        BTCTransactionOutput* myOutput = tx.outputs[outputIndex];
-        [tx removeAllOutputs];
-        for (int i = 0; i < outputIndex; i++) {
-            [tx addOutput:[[BTCTransactionOutput alloc] init]];
-        }
-        [tx addOutput:myOutput];
-        
-        // Blank out others' input sequence numbers to let others update transaction at will.
-        for (NSUInteger i = 0; i < tx.inputs.count; i++) {
-            if (i != inputIndex) {
-                ((BTCTransactionInput*)tx.inputs[i]).sequence = 0;
-            }
-        }
+        uint32_t previousIndex = [input previousIndex];
+        [prevouts appendBytes:&previousIndex length:4];
+
+        uint32_t seq = [input sequence];
+        [sequence appendBytes:&seq length:4];
     }
     
-    // Blank out other inputs completely. This is not recommended for open transactions.
-    if (hashType & SIGHASH_ANYONECANPAY) {
-        BTCTransactionInput* input = tx.inputs[inputIndex];
-        [tx removeAllInputs];
-        [tx addInput:input];
+    // New outputs
+    NSMutableData* nextouts = [NSMutableData data];
+    for(BTCTransactionOutput* output in _outputs) {
+        [nextouts appendData:output.data];
     }
+    
+    // Outpoint
+    NSMutableData* outpointData = [NSMutableData data];
+    BTCTransactionInput* outpoint = [_inputs objectAtIndex:inputIndex];
+    
+    [outpointData appendData:[outpoint previousHash]];
+    
+    uint32_t outpointIndex = [outpoint previousIndex];
+    [outpointData appendBytes:&outpointIndex length:sizeof(outpointIndex)];
+    
+    int64_t amount = (int64_t)[outpoint value];
+    uint32_t nSequence = [outpoint sequence];
+
+    // Hashing...
+    NSData* hashPrevouts = BTCHash256(prevouts);
+    NSData* hashSequence = BTCHash256(sequence);
+    NSData* hashOutputs = BTCHash256(nextouts);
+    
+    // Preimage
+    NSMutableData* preimage = [NSMutableData data];
+    
+    [preimage appendBytes:&_version length:sizeof(_version)];
+    [preimage appendData:hashPrevouts];
+    [preimage appendData:hashSequence];
+    [preimage appendData:outpointData];
+    [preimage appendData:[subscript scriptCode]];
+    [preimage appendBytes:&amount length:sizeof(amount)];
+    [preimage appendBytes:&nSequence length:sizeof(nSequence)];
+    [preimage appendData:hashOutputs];
+    [preimage appendBytes:&_lockTime length:sizeof(_lockTime)];
     
     // Important: we have to hash transaction together with its hash type.
     // Hash type is appended as little endian uint32 unlike 1-byte suffix of the signature.
-    NSMutableData* fulldata = [tx.data mutableCopy];
     uint32_t hashType32 = OSSwapHostToLittleInt32((uint32_t)hashType);
-    [fulldata appendBytes:&hashType32 length:sizeof(hashType32)];
-    
-    NSData* hash = BTCHash256(fulldata);
+    [preimage appendBytes:&hashType32 length:sizeof(hashType32)];
+
+    NSData* hash = BTCHash256(preimage);
     
 //    NSLog(@"\n----------------------\n");
 //    NSLog(@"TX: %@", BTCHexFromData(fulldata));
