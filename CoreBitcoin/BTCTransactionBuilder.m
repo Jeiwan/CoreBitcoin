@@ -124,7 +124,6 @@ NSString* const BTCTransactionBuilderErrorDomain = @"com.oleganza.CoreBitcoin.Tr
         }
 
         BTCAmount fee = [self computeFeeForTransaction:result.transaction];
-        NSLog(@"COMPUTED FEE %lld", fee);
 
         BTCAmount change = result.inputsAmount - result.outputsAmount - fee;
 
@@ -297,8 +296,6 @@ NSString* const BTCTransactionBuilderErrorDomain = @"com.oleganza.CoreBitcoin.Tr
     if (key) {
         BTCSignatureHashType hashtype = SIGHASH_ALL;
 
-        NSData* pubkey = key.uncompressedPublicKeyAddress.data;
-
         NSData* sighash = [tx signatureHashForScript:[outputScript copy] inputIndex:i hashType:hashtype error:errorOut];
         if (!sighash) {
             return NO;
@@ -307,7 +304,7 @@ NSString* const BTCTransactionBuilderErrorDomain = @"com.oleganza.CoreBitcoin.Tr
         // The only case: P2WPKH
         txin.witness = [NSMutableArray array];
         [txin.witness addObject:[key signatureForHash:sighash hashType:hashtype]];
-        [txin.witness addObject:pubkey];
+        [txin.witness addObject:key.compressedPublicKeyAddress.data];
         
         txin.signatureScript = nil;
         
